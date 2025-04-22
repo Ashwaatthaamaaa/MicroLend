@@ -3,48 +3,48 @@ import { ethers } from "ethers"
 // ABI for the MicroLend contract
 const contractABI = [
   // Events
-  "event LoanCreated(uint256 indexed loanId, address indexed borrower, uint256 amount, uint256 interestRate, uint256 duration)",
-  "event LoanFunded(uint256 indexed loanId, address indexed lender, uint256 amount)",
-  "event LoanRepaid(uint256 indexed loanId, address indexed borrower, uint256 amount)",
-  "event RepaymentClaimed(uint256 indexed loanId, address indexed lender, uint256 amount)",
+  "event LoanRequested(uint indexed loanId, address indexed borrower, uint amount, uint interestRateBPS, uint durationSeconds, uint8 collateralType)",
+  "event LoanFunded(uint indexed loanId, address indexed lender, uint fundedTimestamp, uint repaymentDueDate)",
+  "event LoanRepaid(uint indexed loanId, uint amountRepaid)",
+  "event LoanCancelled(uint indexed loanId)",
 
   // Read functions
-  "function getLoanDetails(uint256 loanId) view returns (address borrower, uint256 amount, string purpose, uint256 interestRate, uint256 duration, uint256 funded, uint8 status, uint256 createdAt, uint256 dueDate)",
-  "function getUserLoans(address borrower) view returns (uint256[] loanIds)",
-  "function getUserInvestments(address lender) view returns (uint256[] loanIds)",
-  "function getLenderInvestment(uint256 loanId, address lender) view returns (uint256 amount)",
-  "function getPlatformStats() view returns (uint256 totalLoans, uint256 activeLoans, uint256 totalVolume, uint256 avgInterestRate)",
-  "function getUserStats(address user) view returns (uint256 totalBorrowed, uint256 totalInvested, uint256 activeLoans, uint256 activeInvestments, uint256 reputation)",
+  "function getLoanDetails(uint256 loanId) view returns (tuple(uint id, address borrower, address lender, uint amountRequested, uint interestRateBPS, uint durationSeconds, uint requestedTimestamp, uint fundedTimestamp, uint repaymentDueDate, uint amountRepaid, uint8 status, string purpose, string detailsURI, uint8 collateralType, address collateralContract, uint collateralValueOrId))",
+  "function loansByBorrower(address borrower) view returns (uint[] memory)",
+  "function loansByLender(address lender) view returns (uint[] memory)",
 
   // Write functions
-  "function createLoan(uint256 amount, string purpose, uint256 durationDays, uint256 interestRate) payable returns (uint256 loanId)",
-  "function fundLoan(uint256 loanId) payable",
-  "function repayLoan(uint256 loanId) payable",
-  "function claimRepayment(uint256 loanId)",
+  "function requestLoan(uint _amountRequestedWei, string memory _purpose, string memory _detailsURI, uint _durationSeconds, uint _interestRateBPS, uint8 _collateralType, address _collateralContract, uint _collateralValueOrId) public",
 ]
 
-// Contract address on Polygon
-const contractAddress = "0x1234567890123456789012345678901234567890" // Replace with actual contract address
+// Contract address on Polygon (replace with your deployed contract address)
+const contractAddress = "0x1234567890123456789012345678901234567890"
 
 // Helper function to get contract instance
 const getContract = async () => {
-  if (!window.ethereum) {
+  if (typeof window === 'undefined' || typeof (window as any).ethereum === 'undefined') {
     throw new Error("No Ethereum wallet found")
   }
-
   try {
-    const provider = new ethers.BrowserProvider(window.ethereum)
+    // Use type assertion to handle window.ethereum
+    const provider = new ethers.BrowserProvider((window as any).ethereum)
     const signer = await provider.getSigner()
     return new ethers.Contract(contractAddress, contractABI, signer)
   } catch (error) {
     console.error("Error getting contract:", error)
-    throw new Error(
-      "Failed to connect to the contract. This is expected in the MVP as we're using a placeholder contract address.",
-    )
+    throw new Error("Failed to connect to the contract")
   }
 }
 
-// Update the createLoan function to accept more parameters
+// Convert days to seconds
+const daysToSeconds = (days: number) => days * 24 * 60 * 60
+
+// Convert percentage to basis points (1% = 100 BPS)
+const percentageToBPS = (percentage: number) => percentage * 100
+
+// Convert MATIC to Wei
+const maticToWei = (matic: number) => ethers.parseEther(matic.toString())
+
 export const createLoan = async ({
   amount,
   purpose,
@@ -65,26 +65,58 @@ export const createLoan = async ({
   terms?: string
 }) => {
   try {
-    // This would normally interact with the blockchain
-    // For the MVP, we'll simulate a successful transaction
+    const contract = await getContract()
 
-    console.log("Creating loan with the following details:", {
-      amount,
+    // Convert inputs to contract format
+    const amountWei = maticToWei(amount)
+    const durationSeconds = daysToSeconds(durationDays)
+    const interestRateBPS = percentageToBPS(interestRate)
+
+    // Convert collateral type string to enum value
+    let collateralTypeEnum = 0 // None
+    if (collateralType === "nft") collateralTypeEnum = 1
+    else if (collateralType === "token") collateralTypeEnum = 2
+    else if (collateralType === "other") collateralTypeEnum = 3
+
+    // Handle collateral contract and value
+    let collateralContract = ethers.ZeroAddress
+    let collateralValueOrId = BigInt(0)
+
+    if (collateralType !== "none" && collateralAmount) {
+      if (collateralType === "token") {
+        collateralValueOrId = BigInt(maticToWei(collateralAmount))
+      } else {
+        collateralValueOrId = BigInt(Math.floor(collateralAmount))
+      }
+    }
+
+    // Create IPFS URI for detailed description and terms
+    // In a real implementation, you would upload to IPFS and get the hash
+    const detailsURI = `ipfs://${description || ""}`
+
+    // Call the contract
+    const tx = await contract.requestLoan(
+      amountWei,
       purpose,
-      description,
-      durationDays,
-      interestRate,
-      collateralType,
-      collateralAmount,
-      terms,
-    })
+      detailsURI,
+      durationSeconds,
+      interestRateBPS,
+      collateralTypeEnum,
+      collateralContract,
+      collateralValueOrId
+    )
 
-    // Simulate a delay for the transaction
-    await new Promise((resolve) => setTimeout(resolve, 1500))
+    // Wait for transaction confirmation
+    const receipt = await tx.wait()
+
+    // Get the loan ID from the event
+    const event = receipt.logs.find((log: any) => log.eventName === "LoanRequested")
+    const loanId = event ? event.args.loanId : null
 
     return {
       success: true,
-      loanId: Math.floor(Math.random() * 1000).toString(),
+      loanId: loanId?.toString(),
+      transactionHash: receipt.hash,
     }
   } catch (error) {
     console.error("Error creating loan:", error)
@@ -417,6 +449,19 @@ export const getLoanActivity = async (loanId: string) => {
   } catch (error) {
     console.error("Error getting loan activity:", error)
     return []
+  }
+}
+
+// Cancel a loan
+export const cancelLoan = async (loanId: string) => {
+  try {
+    const contract = await getContract()
+    const tx = await contract.cancelLoan(loanId)
+    await tx.wait()
+    return tx
+  } catch (error) {
+    console.error("Error cancelling loan:", error)
+    throw error
   }
 }
 
