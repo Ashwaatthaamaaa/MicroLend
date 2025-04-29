@@ -17,8 +17,24 @@ export function ConnectWallet() {
   const [account, setAccount] = useState<string | null>(null)
   const [balance, setBalance] = useState<string | null>(null)
   const [chainId, setChainId] = useState<string | null>(null)
+  const [networkName, setNetworkName] = useState<string>("Unknown Network")
   const [isConnecting, setIsConnecting] = useState(false)
   const { toast } = useToast()
+
+  const getNetworkName = (chainId: string) => {
+    switch (chainId) {
+      case "0xaa36a7": // 11155111
+        return "Sepolia"
+      case "0x1":
+        return "Ethereum Mainnet"
+      case "0x5":
+        return "Goerli"
+      default:
+        return "Unknown Network"
+    }
+  }
+
+  const isCorrectNetwork = (chainId: string) => chainId === "0xaa36a7"
 
   useEffect(() => {
     // Check if wallet is already connected
@@ -38,7 +54,8 @@ export function ConnectWallet() {
 
       window.ethereum.on("chainChanged", (chainId: string) => {
         setChainId(chainId)
-        checkIfPolygon(chainId)
+        setNetworkName(getNetworkName(chainId))
+        checkNetwork(chainId)
       })
     }
 
@@ -60,8 +77,11 @@ export function ConnectWallet() {
           getBalance(accounts[0].address)
 
           const network = await provider.getNetwork()
-          setChainId(network.chainId.toString())
-          checkIfPolygon(network.chainId.toString())
+          const chainIdString = network.chainId.toString(16)
+          const formattedChainId = `0x${chainIdString}`
+          setChainId(formattedChainId)
+          setNetworkName(getNetworkName(formattedChainId))
+          checkNetwork(formattedChainId)
         }
       }
     } catch (error) {
@@ -81,12 +101,12 @@ export function ConnectWallet() {
     }
   }
 
-  const checkIfPolygon = (chainId: string) => {
-    // Polygon Mainnet: 0x89, Mumbai Testnet: 0x13881
-    if (chainId !== "0x89" && chainId !== "0x13881") {
+  const checkNetwork = (chainId: string) => {
+    // Sepolia chainId: 0xaa36a7 (11155111 in decimal)
+    if (chainId !== "0xaa36a7") {
       toast({
         title: "Wrong Network",
-        description: "Please connect to Polygon network",
+        description: "Please connect to Sepolia test network",
         variant: "destructive",
       })
     }
@@ -113,8 +133,11 @@ export function ConnectWallet() {
         getBalance(accounts[0])
 
         const network = await provider.getNetwork()
-        setChainId(network.chainId.toString())
-        checkIfPolygon(network.chainId.toString())
+        const chainIdString = network.chainId.toString(16)
+        const formattedChainId = `0x${chainIdString}`
+        setChainId(formattedChainId)
+        setNetworkName(getNetworkName(formattedChainId))
+        checkNetwork(formattedChainId)
 
         toast({
           title: "Wallet Connected",
@@ -144,15 +167,15 @@ export function ConnectWallet() {
     })
   }
 
-  const switchToPolygon = async () => {
+  const switchToSepolia = async () => {
     try {
       if (!window.ethereum) return
 
-      // Try to switch to Polygon
+      // Try to switch to Sepolia
       try {
         await window.ethereum.request({
           method: "wallet_switchEthereumChain",
-          params: [{ chainId: "0x89" }], // Polygon Mainnet
+          params: [{ chainId: "0xaa36a7" }], // Sepolia testnet
         })
       } catch (switchError: any) {
         // This error code indicates that the chain has not been added to MetaMask
@@ -161,15 +184,15 @@ export function ConnectWallet() {
             method: "wallet_addEthereumChain",
             params: [
               {
-                chainId: "0x89",
-                chainName: "Polygon Mainnet",
+                chainId: "0xaa36a7",
+                chainName: "Sepolia Test Network",
                 nativeCurrency: {
-                  name: "MATIC",
-                  symbol: "MATIC",
+                  name: "SepoliaETH",
+                  symbol: "ETH",
                   decimals: 18,
                 },
-                rpcUrls: ["https://polygon-rpc.com/"],
-                blockExplorerUrls: ["https://polygonscan.com/"],
+                rpcUrls: ["https://sepolia.infura.io/v3/"],
+                blockExplorerUrls: ["https://sepolia.etherscan.io"],
               },
             ],
           })
@@ -181,7 +204,7 @@ export function ConnectWallet() {
       console.error("Failed to switch network:", error)
       toast({
         title: "Network Switch Failed",
-        description: "Failed to switch to Polygon network",
+        description: "Failed to switch to Sepolia network",
         variant: "destructive",
       })
     }
@@ -202,9 +225,12 @@ export function ConnectWallet() {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <Button variant="outline">{formatAddress(account)}</Button>
+        <Button variant="outline" className="flex items-center gap-2">
+          <div className={`w-2 h-2 rounded-full ${isCorrectNetwork(chainId || "") ? "bg-green-500" : "bg-red-500"}`} />
+          {formatAddress(account)}
+        </Button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="end">
+      <DropdownMenuContent align="end" className="w-64">
         <DropdownMenuLabel>My Account</DropdownMenuLabel>
         <DropdownMenuSeparator />
         <DropdownMenuItem className="flex justify-between">
@@ -214,12 +240,25 @@ export function ConnectWallet() {
         {balance && (
           <DropdownMenuItem className="flex justify-between">
             <span>Balance:</span>
-            <span>{Number.parseFloat(balance).toFixed(4)} MATIC</span>
+            <span>{Number.parseFloat(balance).toFixed(4)} ETH</span>
           </DropdownMenuItem>
         )}
+        <DropdownMenuItem className="flex justify-between">
+          <span>Network:</span>
+          <span className="flex items-center gap-2">
+            <div className={`w-2 h-2 rounded-full ${isCorrectNetwork(chainId || "") ? "bg-green-500" : "bg-red-500"}`} />
+            {networkName}
+          </span>
+        </DropdownMenuItem>
         <DropdownMenuSeparator />
-        <DropdownMenuItem onClick={switchToPolygon}>Switch to Polygon</DropdownMenuItem>
-        <DropdownMenuItem onClick={disconnectWallet}>Disconnect</DropdownMenuItem>
+        {!isCorrectNetwork(chainId || "") && (
+          <DropdownMenuItem onClick={switchToSepolia} className="text-blue-500 cursor-pointer">
+            Switch to Sepolia
+          </DropdownMenuItem>
+        )}
+        <DropdownMenuItem onClick={disconnectWallet} className="text-red-500 cursor-pointer">
+          Disconnect
+        </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
   )
