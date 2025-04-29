@@ -42,66 +42,122 @@ let signer: Signer | null = null;
 let contract: Contract | null = null;
 let isInitializing = false; // Flag to prevent race conditions during init
 
-// Function to initialize ethers provider and signer
-async function initEthers() {
-    if (isInitializing || (provider && signer && contract)) {
-        // Already initialized or initialization in progress
-        return;
-    }
-    isInitializing = true;
+// Add new wallet change detection functionality
+let walletChangeListeners: (() => void)[] = [];
 
-    console.log("Attempting to initialize ethers...");
+/**
+ * Registers a callback to be executed when the wallet changes
+ * @param listener Function to call when wallet changes
+ * @returns Function to unregister the listener
+ */
+export function onWalletChange(listener: () => void): () => void {
+  walletChangeListeners.push(listener);
+  
+  // Return a function to remove this listener
+  return () => {
+    walletChangeListeners = walletChangeListeners.filter(l => l !== listener);
+  };
+}
 
-    if (typeof window === 'undefined' || !window.ethereum) {
-        console.error("MetaMask not detected. Please install MetaMask.");
-        isInitializing = false;
-        throw new Error("MetaMask is not installed or not accessible.");
-    }
-
+/**
+ * Notify all registered listeners about a wallet change
+ */
+function notifyWalletChanged() {
+  walletChangeListeners.forEach(listener => {
     try {
-        // Use BrowserProvider in ethers v6+
-        provider = new ethers.BrowserProvider(window.ethereum, 'any'); // 'any' allows connection before account access
-
-        // Request account access. This also prompts the user to connect if not already.
-        const accounts = await provider.send("eth_requestAccounts", []);
-        if (!accounts || accounts.length === 0) {
-             throw new Error("No accounts found or permission denied.");
-        }
-
-        signer = await provider.getSigner(); // Get signer after confirming accounts
-
-        // Check if contract address is valid before creating instance
-        if (!contractAddress || contractAddress === ZeroAddress) {
-             throw new Error("Contract address is not configured correctly.");
-        }
-
-        contract = new ethers.Contract(contractAddress, contractABI, signer);
-
-        console.log("Ethers initialized successfully.");
-        console.log("Connected Account:", await signer.getAddress());
-        console.log("Contract Address:", contractAddress);
-
-        // Listen for network/account changes to prompt reload or state update
-        window.ethereum.once('chainChanged', (_chainId: string) => {
-            console.log("Network changed, reloading...");
-            window.location.reload();
-        });
-        window.ethereum.once('accountsChanged', (accounts: string[]) => {
-            console.log("Account changed, reloading...");
-             window.location.reload();
-            // Or potentially just re-initialize without full reload:
-            // isInitializing = false; // Reset flag
-            // provider = null; signer = null; contract = null; // Clear old instances
-            // initEthers(); // Re-initialize
-        });
-
-    } catch (error: any) {
-        console.error("Error initializing ethers:", error.message || error);
-        provider = null; signer = null; contract = null; // Clear instances on error
-        throw new Error(`Failed to initialize wallet connection: ${error.message || 'Unknown error'}`);
-    } finally {
-        isInitializing = false;
+      listener();
+    } catch (error) {
+      console.error('Error in wallet change listener:', error);
     }
+  });
+}
+
+/**
+ * Setup wallet change detection
+ */
+function setupWalletChangeDetection() {
+  if (typeof window !== 'undefined' && window.ethereum) {
+    // Remove any existing listeners to prevent duplicates
+    window.ethereum.removeListener('accountsChanged', handleAccountsChanged);
+    window.ethereum.removeListener('chainChanged', handleChainChanged);
+    
+    // Add listeners with named functions to allow removal
+    window.ethereum.on('accountsChanged', handleAccountsChanged);
+    window.ethereum.on('chainChanged', handleChainChanged);
+    
+    console.log('Wallet change detection set up');
+  }
+}
+
+// Handle account changes from MetaMask
+function handleAccountsChanged(accounts: string[]) {
+  console.log('Wallet accounts changed:', accounts);
+  
+  // Reset state on disconnect
+  if (accounts.length === 0) {
+    provider = null;
+    signer = null;
+    contract = null;
+    console.log('Wallet disconnected');
+  }
+  
+  // Always notify listeners, even if we're going to reinitialize
+  notifyWalletChanged();
+  
+  // Reinitialize if we have accounts
+  if (accounts.length > 0 && provider) {
+    initEthers()
+      .then(() => {
+        console.log('Reinitialized after account change');
+      })
+      .catch(error => {
+        console.error('Failed to reinitialize after wallet change:', error);
+      });
+  }
+}
+
+// Handle chain changes from MetaMask
+function handleChainChanged(chainId: string) {
+  console.log('Wallet network changed:', chainId);
+  
+  // MetaMask recommends reloading the page on chain change
+  window.location.reload();
+}
+
+// Modified initEthers to setup wallet change detection
+async function initEthers() {
+  try {
+    if (typeof window === 'undefined' || !window.ethereum) {
+      throw new Error("MetaMask not detected. Please install MetaMask and reload.");
+    }
+
+    // Request accounts to ensure permission
+    await window.ethereum.request({ method: 'eth_requestAccounts' });
+
+    // Create a new provider and signer
+    provider = new ethers.BrowserProvider(window.ethereum);
+    signer = await provider.getSigner();
+    
+    // Create contract instance
+    contract = new ethers.Contract(contractAddress, contractABI, signer);
+    
+    // Setup wallet change detection (only once)
+    setupWalletChangeDetection();
+    
+    // Log connection success
+    const address = await signer.getAddress();
+    console.log(`Connected to wallet: ${address}`);
+    
+    return { provider, signer, contract };
+  } catch (error: any) {
+    // Reset state on failure
+    provider = null;
+    signer = null;
+    contract = null;
+    
+    console.error("Failed to initialize Ethers:", error.message || error);
+    throw error;
+  }
 }
 
 // Ensure ethers is initialized and connected to Sepolia
@@ -838,6 +894,40 @@ export async function repayLoan(loanId: number | string): Promise<ContractTransa
         console.error(`Error repaying loan ${loanId}:`, error.message || error);
         throw error; // Re-throw for UI handling
     }
+}
+
+/**
+ * Switches the wallet to a different account
+ * @returns Promise resolving to the new account address
+ */
+export async function switchWallet(): Promise<string> {
+  if (typeof window === 'undefined' || !window.ethereum) {
+    throw new Error("MetaMask not detected. Please install MetaMask and reload.");
+  }
+  
+  try {
+    // Prompt user to select an account
+    await window.ethereum.request({
+      method: 'wallet_requestPermissions',
+      params: [{ eth_accounts: {} }],
+    });
+    
+    // Reinitialize with new account
+    await initEthers();
+    
+    if (!signer) {
+      throw new Error("Failed to get signer after switching wallet");
+    }
+    
+    // Return the new address
+    const newAddress = await signer.getAddress();
+    console.log(`Switched to wallet: ${newAddress}`);
+    
+    return newAddress;
+  } catch (error: any) {
+    console.error("Error switching wallet:", error);
+    throw new Error(`Failed to switch wallet: ${error.message || "Unknown error"}`);
+  }
 }
 
 // --- Removed/Non-MVP Functions ---
