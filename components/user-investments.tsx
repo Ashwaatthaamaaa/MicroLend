@@ -5,7 +5,7 @@ import Link from "next/link"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
-import { getUserInvestments, claimRepayment } from "@/lib/loan-contract"
+import { getUserInvestments, claimRepayment } from "@/frontend/lib/loan-contract"
 import { useToast } from "@/hooks/use-toast"
 
 type Investment = {
