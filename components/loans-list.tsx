@@ -10,6 +10,7 @@ import { getLoans, fundLoan, getUserLoans, getAvailableLoans, getConnectedAccoun
 import { useToast } from "@/hooks/use-toast"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { FundLoanDialog } from "./fund-loan-dialog"
+import { RefreshCw } from "lucide-react"
 
 type Loan = {
   id: string
@@ -31,28 +32,28 @@ export function LoansList() {
   const [fundingLoanId, setFundingLoanId] = useState<string | null>(null)
   const { toast } = useToast()
 
-  useEffect(() => {
-    const fetchLoans = async () => {
-      try {
-        setLoading(true)
-        const [userLoans, available] = await Promise.all([
-          getUserLoans(),
-          getAvailableLoans()
-        ])
-        setMyLoans(userLoans)
-        setAvailableLoans(available)
-      } catch (error) {
-        console.error("Failed to fetch loans:", error)
-        toast({
-          title: "Error",
-          description: "Failed to fetch loans. Please try again.",
-          variant: "destructive",
-        })
-      } finally {
-        setLoading(false)
-      }
+  const fetchLoans = async () => {
+    try {
+      setLoading(true)
+      const [userLoans, available] = await Promise.all([
+        getUserLoans(),
+        getAvailableLoans()
+      ])
+      setMyLoans(userLoans)
+      setAvailableLoans(available)
+    } catch (error) {
+      console.error("Failed to fetch loans:", error)
+      toast({
+        title: "Error",
+        description: "Failed to fetch loans. Please try again.",
+        variant: "destructive",
+      })
+    } finally {
+      setLoading(false)
     }
+  }
 
+  useEffect(() => {
     fetchLoans()
   }, [])
 
@@ -225,43 +226,58 @@ export function LoansList() {
   }
 
   return (
-    <Tabs defaultValue="available" className="w-full">
-      <TabsList className="grid w-full grid-cols-2 mb-8">
-        <TabsTrigger value="available">Available Loans</TabsTrigger>
-        <TabsTrigger value="my-loans">My Loan Requests</TabsTrigger>
-      </TabsList>
-      
-      <TabsContent value="available" className="mt-0">
-        <div className="grid gap-6">
-          {availableLoans.length === 0 ? (
-            <div className="text-center py-8">
-              <p>No loans available for funding at the moment.</p>
+    <div>
+      <div className="flex justify-between items-center mb-4">
+        <Tabs defaultValue="available" className="w-full">
+          <div className="flex justify-between items-center">
+            <TabsList className="grid w-full grid-cols-2">
+              <TabsTrigger value="available">Available Loans</TabsTrigger>
+              <TabsTrigger value="my-loans">My Loan Requests</TabsTrigger>
+            </TabsList>
+            <Button 
+              variant="outline" 
+              size="icon" 
+              onClick={fetchLoans} 
+              disabled={loading}
+              title="Refresh loans"
+            >
+              <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
+            </Button>
+          </div>
+          
+          <TabsContent value="available" className="mt-4">
+            <div className="grid gap-6">
+              {availableLoans.length === 0 ? (
+                <div className="text-center py-8">
+                  <p>No loans available for funding at the moment.</p>
+                </div>
+              ) : (
+                availableLoans.map((loan) => (
+                  <LoanCard key={loan.id} loan={loan} showFundButton={true} />
+                ))
+              )}
             </div>
-          ) : (
-            availableLoans.map((loan) => (
-              <LoanCard key={loan.id} loan={loan} showFundButton={true} />
-            ))
-          )}
-        </div>
-      </TabsContent>
-
-      <TabsContent value="my-loans" className="mt-0">
-        <div className="grid gap-6">
-          {myLoans.length === 0 ? (
-            <div className="text-center py-8">
-              <p className="mb-4">You haven't created any loan requests yet.</p>
-              <Link href="/create">
-                <Button>Create a Loan</Button>
-              </Link>
+          </TabsContent>
+          
+          <TabsContent value="my-loans" className="mt-4">
+            <div className="grid gap-6">
+              {myLoans.length === 0 ? (
+                <div className="text-center py-8">
+                  <p className="mb-4">You haven't created any loan requests yet.</p>
+                  <Link href="/create">
+                    <Button>Create a Loan</Button>
+                  </Link>
+                </div>
+              ) : (
+                myLoans.map((loan) => (
+                  <LoanCard key={loan.id} loan={loan} showFundButton={false} />
+                ))
+              )}
             </div>
-          ) : (
-            myLoans.map((loan) => (
-              <LoanCard key={loan.id} loan={loan} showFundButton={false} />
-            ))
-          )}
-        </div>
-      </TabsContent>
-    </Tabs>
+          </TabsContent>
+        </Tabs>
+      </div>
+    </div>
   )
 }
 
