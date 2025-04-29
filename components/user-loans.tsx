@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Progress } from "@/components/ui/progress"
-import { getUserLoans, repayLoan } from "@/lib/loan-contract"
+import { getUserLoans, repayLoan } from "@/frontend/lib/loan-contract"
 import { useToast } from "@/hooks/use-toast"
 
 type Loan = {
@@ -83,9 +83,11 @@ export function UserLoans() {
   }
 
   const getDaysLeft = (dueDate: number) => {
-    const now = Math.floor(Date.now() / 1000)
-    const daysLeft = Math.ceil((dueDate - now) / (60 * 60 * 24))
-    return daysLeft > 0 ? daysLeft : 0
+    if (!dueDate) return 0;
+    const now = Math.floor(Date.now() / 1000);
+    const secondsLeft = dueDate - now;
+    const daysLeft = Math.ceil(secondsLeft / (60 * 60 * 24));
+    return daysLeft > 0 ? daysLeft : 0;
   }
 
   if (loading) {
