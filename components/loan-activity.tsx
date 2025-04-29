@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react"
 import { Clock } from "lucide-react"
-import { getLoanActivity } from "@/lib/loan-contract"
+import { getLoanActivity } from "@/frontend/lib/loan-contract"
 
 interface LoanActivityProps {
   loanId: string
