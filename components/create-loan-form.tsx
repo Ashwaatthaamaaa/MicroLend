@@ -13,102 +13,170 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Slider } from "@/components/ui/slider"
 import { Checkbox } from "@/components/ui/checkbox"
 import { useToast } from "@/hooks/use-toast"
-import { createLoan } from "@/lib/loan-contract"
+import { createLoan, getConnectedAccount } from "@/frontend/lib/loan-contract"
+import { parseEther } from "ethers"
 
 export function CreateLoanForm() {
   const router = useRouter()
   const { toast } = useToast()
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const [errors, setErrors] = useState<{ [key: string]: string }>({})
 
   const [formData, setFormData] = useState({
     amount: "",
     purpose: "",
-    description: "",
     duration: "30",
-    interestRate: 5,
-    collateral: "none",
-    collateralAmount: "",
-    terms: "",
+    interestRate: 500, // 5% in basis points
     agreeToTerms: false,
   })
+
+  const validateForm = () => {
+    const newErrors: { [key: string]: string } = {}
+
+    // Amount validation
+    if (!formData.amount) {
+      newErrors.amount = "Amount is required"
+    } else {
+      const amount = Number.parseFloat(formData.amount)
+      if (isNaN(amount) || amount <= 0) {
+        newErrors.amount = "Please enter a valid positive amount"
+      } else if (amount > 100) {
+        newErrors.amount = "Maximum loan amount is 100 ETH"
+      } 
+      // Validate that amount has max 18 decimal places (ETH precision)
+      try {
+        parseEther(formData.amount)
+      } catch (e) {
+        newErrors.amount = "Invalid ETH amount precision"
+      }
+    }
+
+    // Purpose validation
+    if (!formData.purpose) {
+      newErrors.purpose = "Purpose is required"
+    } else if (formData.purpose.length < 10) {
+      newErrors.purpose = "Purpose must be at least 10 characters"
+    } else if (formData.purpose.length > 100) {
+      newErrors.purpose = "Purpose must not exceed 100 characters"
+    }
+
+    // Duration validation
+    if (!formData.duration) {
+      newErrors.duration = "Duration is required"
+    }
+
+    // Interest rate validation
+    if (formData.interestRate < 100) { // 1%
+      newErrors.interestRate = "Minimum interest rate is 1%"
+    } else if (formData.interestRate > 2000) { // 20%
+      newErrors.interestRate = "Maximum interest rate is 20%"
+    }
+
+    // Terms validation
+    if (!formData.agreeToTerms) {
+      newErrors.terms = "You must agree to the terms and conditions"
+    }
+
+    setErrors(newErrors)
+    return Object.keys(newErrors).length === 0
+  }
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     const { name, value } = e.target
     setFormData((prev) => ({ ...prev, [name]: value }))
+    // Clear error when field is modified
+    if (errors[name]) {
+      setErrors((prev) => ({ ...prev, [name]: "" }))
+    }
   }
 
   const handleSelectChange = (name: string, value: string) => {
     setFormData((prev) => ({ ...prev, [name]: value }))
+    if (errors[name]) {
+      setErrors((prev) => ({ ...prev, [name]: "" }))
+    }
   }
 
   const handleSliderChange = (value: number[]) => {
-    setFormData((prev) => ({ ...prev, interestRate: value[0] }))
+    setFormData((prev) => ({ ...prev, interestRate: value[0] * 100 })) // Convert percentage to basis points
+    if (errors.interestRate) {
+      setErrors((prev) => ({ ...prev, interestRate: "" }))
+    }
   }
 
   const handleCheckboxChange = (checked: boolean) => {
     setFormData((prev) => ({ ...prev, agreeToTerms: checked }))
+    if (errors.terms) {
+      setErrors((prev) => ({ ...prev, terms: "" }))
+    }
   }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
 
     try {
-      setIsSubmitting(true)
-
       // Validate form
-      if (!formData.amount || !formData.purpose || !formData.duration) {
+      if (!validateForm()) {
         toast({
           title: "Validation Error",
-          description: "Please fill in all required fields",
+          description: "Please correct the errors in the form",
           variant: "destructive",
         })
         return
       }
 
-      if (!formData.agreeToTerms) {
-        toast({
-          title: "Terms Agreement Required",
-          description: "You must agree to the terms and conditions",
-          variant: "destructive",
-        })
-        return
-      }
+      setIsSubmitting(true)
 
-      // Convert amount to wei
-      const amountInMatic = Number.parseFloat(formData.amount)
-      if (isNaN(amountInMatic) || amountInMatic <= 0) {
+      // Check wallet connection
+      const account = await getConnectedAccount()
+      if (!account) {
         toast({
-          title: "Invalid Amount",
-          description: "Please enter a valid loan amount",
+          title: "Wallet Not Connected",
+          description: "Please connect your wallet to create a loan request",
           variant: "destructive",
         })
         return
       }
 
       // Create loan on blockchain
-      const result = await createLoan({
-        amount: amountInMatic,
-        purpose: formData.purpose,
-        description: formData.description,
-        durationDays: Number.parseInt(formData.duration),
-        interestRate: formData.interestRate,
-        collateralType: formData.collateral,
-        collateralAmount: formData.collateralAmount ? Number.parseFloat(formData.collateralAmount) : 0,
-        terms: formData.terms,
-      })
+      const tx = await createLoan(
+        formData.amount, // Amount in ETH
+        formData.interestRate, // Interest rate in basis points
+        Number.parseInt(formData.duration), // Duration in days
+        formData.purpose // Loan purpose
+      )
 
       toast({
-        title: "Loan Created",
-        description: "Your loan request has been created successfully",
+        title: "Loan Request Created",
+        description: (
+          <div className="mt-2">
+            <p>Your loan request has been submitted to the blockchain.</p>
+            <p className="mt-2 font-mono text-xs">
+              Transaction: {tx.hash.slice(0, 10)}...{tx.hash.slice(-8)}
+            </p>
+            <p className="mt-2 text-sm">Redirecting to dashboard in 2 seconds...</p>
+          </div>
+        ),
       })
 
-      // Redirect to dashboard
-      router.push("/dashboard")
-    } catch (error) {
+      // Redirect to dashboard after a short delay
+      setTimeout(() => router.push("/dashboard"), 2000)
+    } catch (error: any) {
       console.error("Failed to create loan:", error)
+      
+      // Handle specific error cases
+      let errorMessage = "Failed to create loan. Please try again."
+      if (error.message.includes("user rejected")) {
+        errorMessage = "Transaction was rejected in your wallet"
+      } else if (error.message.includes("insufficient funds")) {
+        errorMessage = "Insufficient funds for gas fees"
+      } else if (error.message.includes("network")) {
+        errorMessage = "Please make sure you're connected to Sepolia network"
+      }
+
       toast({
         title: "Transaction Failed",
-        description: "Failed to create loan. Please try again.",
+        description: errorMessage,
         variant: "destructive",
       })
     } finally {
@@ -119,31 +187,40 @@ export function CreateLoanForm() {
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Loan Details</CardTitle>
+        <CardTitle>Create Loan Request</CardTitle>
         <CardDescription>
-          Provide the details of your loan request. Be clear about the purpose to increase your chances of funding.
+          Specify your loan requirements. All amounts are in ETH on the Sepolia testnet.
         </CardDescription>
       </CardHeader>
       <form onSubmit={handleSubmit}>
         <CardContent className="space-y-6">
           <div className="space-y-2">
-            <Label htmlFor="amount">Loan Amount (MATIC) *</Label>
+            <Label htmlFor="amount" className={errors.amount ? "text-red-500" : ""}>
+              Loan Amount (ETH) *
+            </Label>
             <Input
               id="amount"
               name="amount"
               type="number"
               placeholder="0.00"
               step="0.01"
-              min="0.01"
+              max="100"
               value={formData.amount}
               onChange={handleChange}
               required
+              className={errors.amount ? "border-red-500" : ""}
             />
-            <p className="text-sm text-muted-foreground">Enter the amount you wish to borrow in MATIC</p>
+            {errors.amount ? (
+              <p className="text-sm text-red-500">{errors.amount}</p>
+            ) : (
+              <p className="text-sm text-muted-foreground">Enter the amount you wish to borrow (0.01 - 100 ETH)</p>
+            )}
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="purpose">Loan Purpose *</Label>
+            <Label htmlFor="purpose" className={errors.purpose ? "text-red-500" : ""}>
+              Loan Purpose *
+            </Label>
             <Input
               id="purpose"
               name="purpose"
@@ -151,31 +228,22 @@ export function CreateLoanForm() {
               value={formData.purpose}
               onChange={handleChange}
               required
+              className={errors.purpose ? "border-red-500" : ""}
             />
-            <p className="text-sm text-muted-foreground">A clear title helps lenders understand your needs</p>
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="description">Detailed Description *</Label>
-            <Textarea
-              id="description"
-              name="description"
-              placeholder="Describe why you need this loan and how you plan to use the funds..."
-              value={formData.description}
-              onChange={handleChange}
-              required
-              className="min-h-[100px]"
-            />
-            <p className="text-sm text-muted-foreground">
-              Provide details about your loan request to increase trust with potential lenders
-            </p>
+            {errors.purpose ? (
+              <p className="text-sm text-red-500">{errors.purpose}</p>
+            ) : (
+              <p className="text-sm text-muted-foreground">10-100 characters describing your loan purpose</p>
+            )}
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div className="space-y-2">
-              <Label htmlFor="duration">Loan Duration *</Label>
+              <Label htmlFor="duration" className={errors.duration ? "text-red-500" : ""}>
+                Loan Duration *
+              </Label>
               <Select value={formData.duration} onValueChange={(value) => handleSelectChange("duration", value)}>
-                <SelectTrigger>
+                <SelectTrigger className={errors.duration ? "border-red-500" : ""}>
                   <SelectValue placeholder="Select duration" />
                 </SelectTrigger>
                 <SelectContent>
@@ -184,86 +252,64 @@ export function CreateLoanForm() {
                   <SelectItem value="30">30 days</SelectItem>
                   <SelectItem value="60">60 days</SelectItem>
                   <SelectItem value="90">90 days</SelectItem>
-                  <SelectItem value="180">180 days</SelectItem>
                 </SelectContent>
               </Select>
+              {errors.duration && <p className="text-sm text-red-500">{errors.duration}</p>}
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="collateral">Collateral (Optional)</Label>
-              <Select value={formData.collateral} onValueChange={(value) => handleSelectChange("collateral", value)}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Select collateral type" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="none">None</SelectItem>
-                  <SelectItem value="nft">NFT</SelectItem>
-                  <SelectItem value="token">ERC-20 Token</SelectItem>
-                  <SelectItem value="other">Other Asset</SelectItem>
-                </SelectContent>
-              </Select>
+              <Label className={errors.interestRate ? "text-red-500" : ""}>Interest Rate (%) *</Label>
+              <div className="pt-2">
+                <Slider
+                  defaultValue={[5]}
+                  max={20}
+                  min={1}
+                  step={0.5}
+                  value={[formData.interestRate / 100]}
+                  onValueChange={handleSliderChange}
+                  className={errors.interestRate ? "border-red-500" : ""}
+                />
+                <div className="flex justify-between text-sm">
+                  <span className="text-muted-foreground">1%</span>
+                  <span className={errors.interestRate ? "text-red-500" : "text-muted-foreground"}>
+                    {formData.interestRate / 100}% APR
+                  </span>
+                  <span className="text-muted-foreground">20%</span>
+                </div>
+              </div>
+              {errors.interestRate && <p className="text-sm text-red-500">{errors.interestRate}</p>}
             </div>
           </div>
 
-          {formData.collateral !== "none" && (
-            <div className="space-y-2">
-              <Label htmlFor="collateralAmount">Collateral Amount/ID</Label>
-              <Input
-                id="collateralAmount"
-                name="collateralAmount"
-                placeholder={formData.collateral === "nft" ? "NFT ID" : "Amount"}
-                value={formData.collateralAmount}
-                onChange={handleChange}
-              />
-              <p className="text-sm text-muted-foreground">
-                {formData.collateral === "nft"
-                  ? "Enter the ID of the NFT you're using as collateral"
-                  : "Enter the amount of tokens you're using as collateral"}
-              </p>
-            </div>
-          )}
-
-          <div className="space-y-4">
-            <div className="space-y-2">
-              <Label>Interest Rate: {formData.interestRate}%</Label>
-              <Slider
-                defaultValue={[5]}
-                max={20}
-                min={1}
-                step={0.5}
-                value={[formData.interestRate]}
-                onValueChange={handleSliderChange}
-              />
-              <p className="text-sm text-muted-foreground">Higher interest rates may attract lenders more quickly</p>
-            </div>
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="terms">Terms & Conditions (Optional)</Label>
-            <Textarea
+          <div className="flex items-start space-x-2">
+            <Checkbox
               id="terms"
-              name="terms"
-              placeholder="Any specific terms or conditions for this loan..."
-              value={formData.terms}
-              onChange={handleChange}
-              className="min-h-[80px]"
+              checked={formData.agreeToTerms}
+              onCheckedChange={handleCheckboxChange}
+              className={errors.terms ? "border-red-500" : ""}
             />
-            <p className="text-sm text-muted-foreground">Specify any additional terms or conditions for this loan</p>
-          </div>
-
-          <div className="flex items-center space-x-2">
-            <Checkbox id="agreeToTerms" checked={formData.agreeToTerms} onCheckedChange={handleCheckboxChange} />
-            <label
-              htmlFor="agreeToTerms"
-              className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
-            >
-              I agree to the platform terms and conditions
-            </label>
+            <div className="grid gap-1.5 leading-none">
+              <label
+                htmlFor="terms"
+                className={`text-sm font-medium leading-none ${
+                  errors.terms ? "text-red-500" : ""
+                } peer-disabled:cursor-not-allowed peer-disabled:opacity-70`}
+              >
+                I agree to the terms and conditions
+              </label>
+              {errors.terms && <p className="text-sm text-red-500">{errors.terms}</p>}
+            </div>
           </div>
         </CardContent>
         <CardFooter>
-          <Button type="submit" className="w-full" disabled={isSubmitting}>
-            {isSubmitting ? "Creating Loan..." : "Create Loan Request"}
+          <Button type="submit" disabled={isSubmitting} className="w-full">
+            {isSubmitting ? (
+              <>
+                <span className="animate-pulse">Creating Loan Request...</span>
+              </>
+            ) : (
+              "Create Loan Request"
+            )}
           </Button>
         </CardFooter>
       </form>
