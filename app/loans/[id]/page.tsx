@@ -11,7 +11,7 @@ import { Progress } from "@/components/ui/progress"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { ThemeProvider } from "@/components/theme-provider"
 import { ConnectWallet } from "@/components/connect-wallet"
-import { getLoanDetails, fundLoan, repayLoan } from "@/lib/loan-contract"
+import { getLoanDetails, fundLoan, repayLoan, formatEther, debugFundLoan } from "@/frontend/lib/loan-contract"
 import { useToast } from "@/hooks/use-toast"
 import { LoanRepaymentSchedule } from "@/components/loan-repayment-schedule"
 import { LoanActivity } from "@/components/loan-activity"
@@ -23,7 +23,6 @@ export default function LoanDetails() {
   const [loan, setLoan] = useState<any>(null)
   const [loading, setLoading] = useState(true)
   const [processing, setProcessing] = useState(false)
-  const [fundAmount, setFundAmount] = useState(0.1)
 
   useEffect(() => {
     const fetchLoanDetails = async () => {
@@ -52,18 +51,46 @@ export default function LoanDetails() {
 
     try {
       setProcessing(true)
-      await fundLoan(loan.id, fundAmount)
-
-      // Update the loan data
-      setLoan((prev) => ({
-        ...prev,
-        funded: prev.funded + fundAmount,
-      }))
-
+      
       toast({
-        title: "Loan Funded",
-        description: `You have successfully funded ${fundAmount} MATIC to this loan`,
-      })
+        title: "Initiating Funding",
+        description: `Funding loan for ${formatEther(loan.amount)} MATIC to borrower account...`,
+      });
+      
+      console.log("Using debug fund loan function for better error tracking...");
+      const tx = await debugFundLoan(loan.id)
+      
+      toast({
+        title: "Transaction Submitted",
+        description: "Your funding transaction has been submitted. Waiting for confirmation...",
+      });
+      
+      // Wait for transaction to be confirmed
+      const receipt = await tx.wait()
+      console.log("Transaction receipt:", receipt);
+      
+      toast({
+        title: "Transaction Confirmed",
+        description: "Your funding transaction has been confirmed. Checking loan status...",
+      });
+      
+      // Refresh loan data from blockchain
+      const loanId = params.id as string
+      const updatedLoanData = await getLoanDetails(loanId)
+      setLoan(updatedLoanData)
+      
+      // Check if loan status is now active (fully funded)
+      if (updatedLoanData.status === 1) { // 1 = Active
+        toast({
+          title: "Loan Successfully Funded",
+          description: `Full amount of ${formatEther(updatedLoanData.amount)} MATIC has been transferred to borrower account ${updatedLoanData.borrower}`,
+        });
+      } else {
+        toast({
+          title: "Loan Funding In Progress",
+          description: "Your contribution was processed, but the loan is not yet fully funded.",
+        });
+      }
     } catch (error) {
       console.error("Failed to fund loan:", error)
       toast({
@@ -130,10 +157,11 @@ export default function LoanDetails() {
   }
 
   const getDaysLeft = () => {
-    if (!loan || !loan.dueDate) return 0
-    const now = Math.floor(Date.now() / 1000)
-    const daysLeft = Math.ceil((loan.dueDate - now) / (60 * 60 * 24))
-    return daysLeft > 0 ? daysLeft : 0
+    if (!loan || !loan.dueDate) return 0;
+    const now = Math.floor(Date.now() / 1000);
+    const secondsLeft = Number(loan.dueDate) - now;
+    const daysLeft = Math.ceil(secondsLeft / (60 * 60 * 24));
+    return daysLeft > 0 ? daysLeft : 0;
   }
 
   if (loading) {
@@ -391,19 +419,11 @@ export default function LoanDetails() {
                   <CardFooter className="flex flex-col gap-4">
                     {loan.status === "funding" && (
                       <>
-                        <div className="grid grid-cols-3 gap-2 w-full">
-                          <Button variant="outline" className="col-span-1" onClick={() => setFundAmount(0.1)}>
-                            0.1
-                          </Button>
-                          <Button variant="outline" className="col-span-1" onClick={() => setFundAmount(0.5)}>
-                            0.5
-                          </Button>
-                          <Button variant="outline" className="col-span-1" onClick={() => setFundAmount(1)}>
-                            1.0
-                          </Button>
+                        <div className="text-center text-amber-500 mb-2">
+                          Full funding required. Partial funding is not allowed.
                         </div>
                         <Button className="w-full" onClick={handleFund} disabled={processing}>
-                          {processing ? "Processing..." : `Fund ${fundAmount} MATIC`}
+                          {processing ? "Processing..." : `Fund Entire Loan (${loan.amount} MATIC)`}
                         </Button>
                       </>
                     )}
