@@ -11,7 +11,8 @@ import { Progress } from "@/components/ui/progress"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { ThemeProvider } from "@/components/theme-provider"
 import { ConnectWallet } from "@/components/connect-wallet"
-import { getLoanDetails, fundLoan, repayLoan, formatEther, debugFundLoan } from "@/frontend/lib/loan-contract"
+import { formatEther } from "ethers"
+import { getLoanDetails, fundLoan, repayLoan, debugFundLoan, getConnectedAccount } from "@/frontend/lib/loan-contract"
 import { useToast } from "@/hooks/use-toast"
 import { LoanRepaymentSchedule } from "@/components/loan-repayment-schedule"
 import { LoanActivity } from "@/components/loan-activity"
@@ -29,13 +30,70 @@ export default function LoanDetails() {
       try {
         setLoading(true)
         const loanId = params.id as string
+        console.log("Fetching loan details for ID:", loanId);
+        
         const loanData = await getLoanDetails(loanId)
-        setLoan(loanData)
+        console.log("Raw loan data received:", loanData);
+        
+        // Format the loan data consistently for the UI
+        if (loanData) {
+          // Convert the loan status from numerical to string format if needed
+          const statusMap = {
+            0: "funding",
+            1: "active", 
+            2: "completed",
+            3: "defaulted"
+          };
+          
+          // Create a formatted loan object with proper data types
+          const formattedLoan = {
+            id: loanData.id.toString(),
+            borrower: loanData.borrower,
+            amount: typeof loanData.amount === 'bigint' ? 
+              Number(formatEther(loanData.amount)) : 
+              loanData.amount,
+            funded: typeof loanData.amountFunded === 'bigint' ? 
+              Number(formatEther(loanData.amountFunded)) : 
+              loanData.funded,
+            interestRate: typeof loanData.interestRate === 'bigint' ? 
+              Number(loanData.interestRate) / 100 : // Convert basis points to percentage
+              loanData.interestRate,
+            duration: typeof loanData.duration === 'bigint' ? 
+              Math.floor(Number(loanData.duration) / (24 * 60 * 60)) : // Convert seconds to days
+              loanData.duration,
+            purpose: loanData.purpose,
+            status: typeof loanData.status === 'number' ? 
+              statusMap[loanData.status as keyof typeof statusMap] || "unknown" : 
+              loanData.status,
+            createdAt: typeof loanData.createdAt === 'bigint' ? 
+              Number(loanData.createdAt) : 
+              loanData.createdAt,
+            dueDate: typeof loanData.dueDate === 'bigint' ? 
+              Number(loanData.dueDate) : 
+              loanData.dueDate
+          };
+          
+          console.log("Formatted loan data:", formattedLoan);
+          
+          // Check if current user is the borrower
+          const isOwner = await checkIfUserIsBorrower(loanData.borrower);
+          formattedLoan.isOwner = isOwner;
+          
+          setLoan(formattedLoan);
+        } else {
+          console.error("Loan data is null or undefined");
+          // Handle case where loan details are not found
+          toast({
+            title: "Loan Not Found",
+            description: "Could not find details for this loan",
+            variant: "destructive",
+          });
+        }
       } catch (error) {
         console.error("Failed to fetch loan details:", error)
         toast({
           title: "Error",
-          description: "Failed to load loan details",
+          description: "Failed to load loan details: " + (error instanceof Error ? error.message : String(error)),
           variant: "destructive",
         })
       } finally {
@@ -46,6 +104,18 @@ export default function LoanDetails() {
     fetchLoanDetails()
   }, [params.id, toast])
 
+  // Add a helper function to check if the current user is the borrower
+  const checkIfUserIsBorrower = async (borrowerAddress: string) => {
+    try {
+      // Get the current wallet address
+      const currentAddress = await getConnectedAccount();
+      return currentAddress && currentAddress.toLowerCase() === borrowerAddress.toLowerCase();
+    } catch (error) {
+      console.error("Error checking borrower status:", error);
+      return false;
+    }
+  }
+
   const handleFund = async () => {
     if (!loan) return
 
@@ -54,7 +124,7 @@ export default function LoanDetails() {
       
       toast({
         title: "Initiating Funding",
-        description: `Funding loan for ${formatEther(loan.amount)} MATIC to borrower account...`,
+        description: `Funding loan for ${loan.amount} MATIC to borrower account...`,
       });
       
       console.log("Using debug fund loan function for better error tracking...");
@@ -77,25 +147,65 @@ export default function LoanDetails() {
       // Refresh loan data from blockchain
       const loanId = params.id as string
       const updatedLoanData = await getLoanDetails(loanId)
-      setLoan(updatedLoanData)
+      console.log("Updated loan data:", updatedLoanData);
       
-      // Check if loan status is now active (fully funded)
-      if (updatedLoanData.status === 1) { // 1 = Active
-        toast({
-          title: "Loan Successfully Funded",
-          description: `Full amount of ${formatEther(updatedLoanData.amount)} MATIC has been transferred to borrower account ${updatedLoanData.borrower}`,
-        });
-      } else {
-        toast({
-          title: "Loan Funding In Progress",
-          description: "Your contribution was processed, but the loan is not yet fully funded.",
-        });
+      if (updatedLoanData) {
+        // Format the updated loan data using the same logic as in fetchLoanDetails
+        const statusMap = {
+          0: "funding",
+          1: "active", 
+          2: "completed",
+          3: "defaulted"
+        };
+        
+        const formattedLoan = {
+          id: updatedLoanData.id.toString(),
+          borrower: updatedLoanData.borrower,
+          amount: typeof updatedLoanData.amount === 'bigint' ? 
+            Number(formatEther(updatedLoanData.amount)) : 
+            updatedLoanData.amount,
+          funded: typeof updatedLoanData.amountFunded === 'bigint' ? 
+            Number(formatEther(updatedLoanData.amountFunded)) : 
+            updatedLoanData.funded,
+          interestRate: typeof updatedLoanData.interestRate === 'bigint' ? 
+            Number(updatedLoanData.interestRate) / 100 : 
+            updatedLoanData.interestRate,
+          duration: typeof updatedLoanData.duration === 'bigint' ? 
+            Math.floor(Number(updatedLoanData.duration) / (24 * 60 * 60)) : 
+            updatedLoanData.duration,
+          purpose: updatedLoanData.purpose,
+          status: typeof updatedLoanData.status === 'number' ? 
+            statusMap[updatedLoanData.status as keyof typeof statusMap] || "unknown" : 
+            updatedLoanData.status,
+          createdAt: typeof updatedLoanData.createdAt === 'bigint' ? 
+            Number(updatedLoanData.createdAt) : 
+            updatedLoanData.createdAt,
+          dueDate: typeof updatedLoanData.dueDate === 'bigint' ? 
+            Number(updatedLoanData.dueDate) : 
+            updatedLoanData.dueDate,
+          isOwner: await checkIfUserIsBorrower(updatedLoanData.borrower)
+        };
+        
+        setLoan(formattedLoan);
+        
+        // Check if loan status is now active (fully funded)
+        if (updatedLoanData.status === 1) { // 1 = Active
+          toast({
+            title: "Loan Successfully Funded",
+            description: `Full amount of ${formattedLoan.amount} MATIC has been transferred to borrower account ${formattedLoan.borrower}`,
+          });
+        } else {
+          toast({
+            title: "Loan Funding In Progress",
+            description: "Your contribution was processed, but the loan is not yet fully funded.",
+          });
+        }
       }
     } catch (error) {
       console.error("Failed to fund loan:", error)
       toast({
         title: "Transaction Failed",
-        description: "Failed to fund loan. Please try again.",
+        description: "Failed to fund loan: " + (error instanceof Error ? error.message : String(error)),
         variant: "destructive",
       })
     } finally {
@@ -108,13 +218,80 @@ export default function LoanDetails() {
 
     try {
       setProcessing(true)
-      await repayLoan(loan.id)
+      
+      toast({
+        title: "Initiating Repayment",
+        description: `Repaying loan of ${loan.amount} MATIC with interest...`,
+      });
+      
+      const tx = await repayLoan(loan.id)
+      
+      toast({
+        title: "Transaction Submitted",
+        description: "Your repayment transaction has been submitted. Waiting for confirmation...",
+      });
+      
+      // Wait for transaction to be confirmed
+      const receipt = await tx.wait()
+      console.log("Repayment transaction receipt:", receipt);
+      
+      toast({
+        title: "Transaction Confirmed",
+        description: "Your repayment has been confirmed. Updating loan status...",
+      });
 
-      // Update the loan data
-      setLoan((prev) => ({
-        ...prev,
-        status: "completed",
-      }))
+      // Update the loan data by fetching fresh data
+      const loanId = params.id as string
+      try {
+        const updatedLoanData = await getLoanDetails(loanId)
+        
+        if (updatedLoanData) {
+          // Format the loan data using the same logic as in fetchLoanDetails
+          const statusMap = {
+            0: "funding",
+            1: "active", 
+            2: "completed",
+            3: "defaulted"
+          };
+          
+          const formattedLoan = {
+            id: updatedLoanData.id.toString(),
+            borrower: updatedLoanData.borrower,
+            amount: typeof updatedLoanData.amount === 'bigint' ? 
+              Number(formatEther(updatedLoanData.amount)) : 
+              updatedLoanData.amount,
+            funded: typeof updatedLoanData.amountFunded === 'bigint' ? 
+              Number(formatEther(updatedLoanData.amountFunded)) : 
+              updatedLoanData.funded,
+            interestRate: typeof updatedLoanData.interestRate === 'bigint' ? 
+              Number(updatedLoanData.interestRate) / 100 : 
+              updatedLoanData.interestRate,
+            duration: typeof updatedLoanData.duration === 'bigint' ? 
+              Math.floor(Number(updatedLoanData.duration) / (24 * 60 * 60)) : 
+              updatedLoanData.duration,
+            purpose: updatedLoanData.purpose,
+            status: typeof updatedLoanData.status === 'number' ? 
+              statusMap[updatedLoanData.status as keyof typeof statusMap] || "unknown" : 
+              updatedLoanData.status,
+            createdAt: typeof updatedLoanData.createdAt === 'bigint' ? 
+              Number(updatedLoanData.createdAt) : 
+              updatedLoanData.createdAt,
+            dueDate: typeof updatedLoanData.dueDate === 'bigint' ? 
+              Number(updatedLoanData.dueDate) : 
+              updatedLoanData.dueDate,
+            isOwner: await checkIfUserIsBorrower(updatedLoanData.borrower)
+          };
+          
+          setLoan(formattedLoan);
+        }
+      } catch (error) {
+        console.error("Error fetching updated loan details after repayment:", error);
+        // If we can't get updated loan data, just set status to completed
+        setLoan((prev) => ({
+          ...prev,
+          status: "completed",
+        }));
+      }
 
       toast({
         title: "Loan Repaid",
@@ -124,7 +301,7 @@ export default function LoanDetails() {
       console.error("Failed to repay loan:", error)
       toast({
         title: "Transaction Failed",
-        description: "Failed to repay loan. Please try again.",
+        description: "Failed to repay loan: " + (error instanceof Error ? error.message : String(error)),
         variant: "destructive",
       })
     } finally {
