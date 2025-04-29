@@ -12,6 +12,7 @@ import {
 } from "@/components/ui/dropdown-menu"
 import { ethers } from "ethers"
 import { useToast } from "@/hooks/use-toast"
+import { switchWallet, onWalletChange, connectWallet as connectWalletService } from "@/frontend/lib/loan-contract"
 
 export function ConnectWallet() {
   const [account, setAccount] = useState<string | null>(null)
@@ -40,29 +41,15 @@ export function ConnectWallet() {
     // Check if wallet is already connected
     checkConnection()
 
-    // Listen for account changes
-    if (window.ethereum) {
-      window.ethereum.on("accountsChanged", (accounts: string[]) => {
-        if (accounts.length > 0) {
-          setAccount(accounts[0])
-          getBalance(accounts[0])
-        } else {
-          setAccount(null)
-          setBalance(null)
-        }
-      })
-
-      window.ethereum.on("chainChanged", (chainId: string) => {
-        setChainId(chainId)
-        setNetworkName(getNetworkName(chainId))
-        checkNetwork(chainId)
-      })
-    }
+    // Register wallet change listener
+    const cleanup = onWalletChange(() => {
+      console.log("Wallet change detected in ConnectWallet component");
+      checkConnection(); // Refresh the connection info
+    });
 
     return () => {
-      if (window.ethereum) {
-        window.ethereum.removeAllListeners()
-      }
+      // Clean up wallet change listener
+      cleanup();
     }
   }, [])
 
@@ -82,6 +69,11 @@ export function ConnectWallet() {
           setChainId(formattedChainId)
           setNetworkName(getNetworkName(formattedChainId))
           checkNetwork(formattedChainId)
+        } else {
+          // Clear state if no accounts are connected
+          setAccount(null)
+          setBalance(null)
+          setChainId(null)
         }
       }
     } catch (error) {
@@ -125,25 +117,15 @@ export function ConnectWallet() {
         return
       }
 
-      const provider = new ethers.BrowserProvider(window.ethereum)
-      const accounts = await provider.send("eth_requestAccounts", [])
+      await connectWalletService();
+      
+      // Refresh connection details
+      await checkConnection();
 
-      if (accounts.length > 0) {
-        setAccount(accounts[0])
-        getBalance(accounts[0])
-
-        const network = await provider.getNetwork()
-        const chainIdString = network.chainId.toString(16)
-        const formattedChainId = `0x${chainIdString}`
-        setChainId(formattedChainId)
-        setNetworkName(getNetworkName(formattedChainId))
-        checkNetwork(formattedChainId)
-
-        toast({
-          title: "Wallet Connected",
-          description: "Your wallet has been connected successfully",
-        })
-      }
+      toast({
+        title: "Wallet Connected",
+        description: "Your wallet has been connected successfully",
+      })
     } catch (error) {
       console.error("Failed to connect wallet:", error)
       toast({
@@ -214,6 +196,23 @@ export function ConnectWallet() {
     return `${address.substring(0, 6)}...${address.substring(address.length - 4)}`
   }
 
+  const handleSwitchWallet = async () => {
+    try {
+      await switchWallet();
+      toast({
+        title: "Wallet Switched",
+        description: "You've successfully switched to a different wallet account",
+      });
+    } catch (error) {
+      console.error("Failed to switch wallet:", error);
+      toast({
+        title: "Wallet Switch Failed",
+        description: "Failed to switch wallet. Please try again.",
+        variant: "destructive",
+      });
+    }
+  }
+
   if (!account) {
     return (
       <Button onClick={connectWallet} disabled={isConnecting}>
@@ -251,6 +250,9 @@ export function ConnectWallet() {
           </span>
         </DropdownMenuItem>
         <DropdownMenuSeparator />
+        <DropdownMenuItem onClick={handleSwitchWallet} className="cursor-pointer">
+          Switch Wallet
+        </DropdownMenuItem>
         {!isCorrectNetwork(chainId || "") && (
           <DropdownMenuItem onClick={switchToSepolia} className="text-blue-500 cursor-pointer">
             Switch to Sepolia
