@@ -7,6 +7,8 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { Badge } from "@/components/ui/badge"
 import { getUserInvestments, claimRepayment } from "@/frontend/lib/loan-contract"
 import { useToast } from "@/hooks/use-toast"
+import { useWallet } from "./wallet-provider"
+import { RefreshCcw } from "lucide-react"
 
 type Investment = {
   loanId: string
@@ -25,6 +27,7 @@ export function UserInvestments() {
   const [loading, setLoading] = useState(true)
   const [claimingLoanId, setClaimingLoanId] = useState<string | null>(null)
   const { toast } = useToast()
+  const { isConnected, address, refreshData, isRefreshing } = useWallet()
 
   useEffect(() => {
     const fetchInvestments = async () => {
@@ -39,8 +42,14 @@ export function UserInvestments() {
       }
     }
 
-    fetchInvestments()
-  }, [])
+    if (isConnected && address) {
+      fetchInvestments()
+    } else {
+      // If wallet not connected, show empty list
+      setInvestments([])
+      setLoading(false)
+    }
+  }, [isConnected, address])
 
   const handleClaim = async (loanId: string) => {
     try {
@@ -66,6 +75,27 @@ export function UserInvestments() {
     }
   }
 
+  const handleRefresh = async () => {
+    try {
+      setLoading(true)
+      const data = await getUserInvestments()
+      setInvestments(data)
+      toast({
+        title: "Data Refreshed",
+        description: "Your investments have been refreshed with the latest data",
+      })
+    } catch (error) {
+      console.error("Failed to refresh investments:", error)
+      toast({
+        title: "Refresh Failed",
+        description: "Failed to refresh investment data. Please try again.",
+        variant: "destructive",
+      })
+    } finally {
+      setLoading(false)
+    }
+  }
+
   const formatAddress = (address: string) => {
     return `${address.substring(0, 6)}...${address.substring(address.length - 4)}`
   }
@@ -86,95 +116,111 @@ export function UserInvestments() {
   }
 
   const getDaysLeft = (dueDate: number) => {
-    const now = Math.floor(Date.now() / 1000)
-    const daysLeft = Math.ceil((dueDate - now) / (60 * 60 * 24))
-    return daysLeft > 0 ? daysLeft : 0
+    if (!dueDate) return 0;
+    const now = Math.floor(Date.now() / 1000);
+    const secondsLeft = dueDate - now;
+    const daysLeft = Math.ceil(secondsLeft / (60 * 60 * 24));
+    return daysLeft > 0 ? daysLeft : 0;
   }
 
   const calculateReturn = (investedAmount: number, interestRate: number) => {
     return investedAmount * (1 + interestRate / 100)
   }
 
-  if (loading) {
+  if (loading || isRefreshing) {
     return <div className="text-center py-8">Loading your investments...</div>
   }
 
-  if (investments.length === 0) {
+  if (!isConnected) {
     return (
       <div className="text-center py-8">
-        <p className="mb-4">You haven't invested in any loans yet.</p>
-        <Link href="/loans">
-          <Button>Browse Loans</Button>
-        </Link>
+        <p className="mb-4">Please connect your wallet to view your investments</p>
       </div>
     )
   }
 
   return (
-    <div className="grid gap-6">
-      {investments.map((investment) => (
-        <Card key={investment.loanId}>
-          <CardHeader className="pb-2">
-            <div className="flex justify-between items-start">
-              <div>
-                <CardTitle>{investment.purpose}</CardTitle>
+    <div className="space-y-4">
+      <div className="flex justify-between items-center">
+        <h3 className="text-xl font-semibold">Your Investments</h3>
+        <Button variant="outline" size="sm" onClick={handleRefresh} disabled={loading}>
+          <RefreshCcw className="h-4 w-4 mr-2" />
+          Refresh
+        </Button>
+      </div>
+      
+      {investments.length === 0 ? (
+        <div className="text-center py-8">
+          <p className="text-muted-foreground">You haven't invested in any loans yet.</p>
+          <Button asChild className="mt-4">
+            <Link href="/loans">Browse Available Loans</Link>
+          </Button>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          {investments.map((investment) => (
+            <Card key={investment.loanId}>
+              <CardHeader className="pb-3">
+                <div className="flex justify-between">
+                  <Badge className={getStatusColor(investment.status)}>
+                    {investment.status.charAt(0).toUpperCase() + investment.status.slice(1)}
+                  </Badge>
+                </div>
+                <CardTitle className="text-xl mt-2">{investment.purpose}</CardTitle>
                 <CardDescription>Borrower: {formatAddress(investment.borrower)}</CardDescription>
-              </div>
-              <Badge className={getStatusColor(investment.status)}>
-                {investment.status.charAt(0).toUpperCase() + investment.status.slice(1)}
-              </Badge>
-            </div>
-          </CardHeader>
-          <CardContent className="pb-2">
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-              <div>
-                <p className="text-sm text-muted-foreground">Invested</p>
-                <p className="font-medium">{investment.investedAmount} MATIC</p>
-              </div>
-              <div>
-                <p className="text-sm text-muted-foreground">Interest</p>
-                <p className="font-medium">{investment.interestRate}%</p>
-              </div>
-              {investment.status === "completed" ? (
-                <div>
-                  <p className="text-sm text-muted-foreground">Return</p>
-                  <p className="font-medium">
-                    {calculateReturn(investment.investedAmount, investment.interestRate).toFixed(4)} MATIC
-                  </p>
+              </CardHeader>
+              <CardContent className="pb-2">
+                <div className="grid grid-cols-2 md:grid-cols-2 gap-4">
+                  <div>
+                    <p className="text-sm text-muted-foreground">Invested</p>
+                    <p className="font-medium">{investment.investedAmount} MATIC</p>
+                  </div>
+                  <div>
+                    <p className="text-sm text-muted-foreground">Interest</p>
+                    <p className="font-medium">{investment.interestRate}%</p>
+                  </div>
+                  {investment.status === "completed" ? (
+                    <div>
+                      <p className="text-sm text-muted-foreground">Return</p>
+                      <p className="font-medium">
+                        {calculateReturn(investment.investedAmount, investment.interestRate).toFixed(4)} MATIC
+                      </p>
+                    </div>
+                  ) : (
+                    <div>
+                      <p className="text-sm text-muted-foreground">Expected Return</p>
+                      <p className="font-medium">
+                        {calculateReturn(investment.investedAmount, investment.interestRate).toFixed(4)} MATIC
+                      </p>
+                    </div>
+                  )}
+                  {investment.status === "active" && (
+                    <div>
+                      <p className="text-sm text-muted-foreground">Due In</p>
+                      <p className="font-medium">{getDaysLeft(investment.dueDate)} days</p>
+                    </div>
+                  )}
                 </div>
-              ) : (
-                <div>
-                  <p className="text-sm text-muted-foreground">Expected Return</p>
-                  <p className="font-medium">
-                    {calculateReturn(investment.investedAmount, investment.interestRate).toFixed(4)} MATIC
-                  </p>
-                </div>
-              )}
-              {investment.status === "active" && (
-                <div>
-                  <p className="text-sm text-muted-foreground">Due In</p>
-                  <p className="font-medium">{getDaysLeft(investment.dueDate)} days</p>
-                </div>
-              )}
-            </div>
-          </CardContent>
-          <CardFooter>
-            {investment.status === "completed" ? (
-              <Button
-                className="w-full"
-                onClick={() => handleClaim(investment.loanId)}
-                disabled={claimingLoanId === investment.loanId}
-              >
-                {claimingLoanId === investment.loanId ? "Processing..." : "Claim Repayment"}
-              </Button>
-            ) : (
-              <Button className="w-full" variant="outline" asChild>
-                <Link href={`/loans/${investment.loanId}`}>View Details</Link>
-              </Button>
-            )}
-          </CardFooter>
-        </Card>
-      ))}
+              </CardContent>
+              <CardFooter>
+                {investment.status === "completed" ? (
+                  <Button
+                    className="w-full"
+                    onClick={() => handleClaim(investment.loanId)}
+                    disabled={claimingLoanId === investment.loanId}
+                  >
+                    {claimingLoanId === investment.loanId ? "Processing..." : "Claim Repayment"}
+                  </Button>
+                ) : (
+                  <Button className="w-full" variant="outline" asChild>
+                    <Link href={`/loans/${investment.loanId}`}>View Details</Link>
+                  </Button>
+                )}
+              </CardFooter>
+            </Card>
+          ))}
+        </div>
+      )}
     </div>
   )
 }
