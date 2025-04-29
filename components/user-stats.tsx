@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { getUserStats } from "@/lib/loan-contract"
+import { getUserStats } from "@/frontend/lib/loan-contract"
 
 export function UserStats() {
   const [stats, setStats] = useState({
