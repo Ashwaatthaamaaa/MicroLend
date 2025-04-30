@@ -36,7 +36,7 @@ export default function Home() {
                 for Everyone
               </h1>
               <p className="max-w-[700px] text-muted-foreground md:text-xl">
-                Access and provide microloans on the Polygon blockchain. Fast, secure, and accessible financial services
+                Access and provide microloans on the Ethereum blockchain. Fast, secure, and accessible financial services
                 for all.
               </p>
             </div>
