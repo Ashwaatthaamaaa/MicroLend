@@ -897,6 +897,51 @@ export async function repayLoan(loanId: number | string): Promise<ContractTransa
 }
 
 /**
+ * Allows a lender to claim their repayment for a completed loan.
+ * Note: In this implementation, repayments are automatically distributed when a loan is repaid.
+ * This function is a placeholder for any additional actions needed after repayment is received.
+ * @param loanId The ID of the loan for which to claim the repayment
+ * @returns The transaction response (if implemented) or a boolean indicating success
+ */
+export async function claimRepayment(loanId: number | string): Promise<boolean> {
+  await ensureInitialized();
+  if (!signer) throw new Error("Wallet not connected.");
+  
+  try {
+    // Get loan details to verify status
+    const loan = await getLoanDetails(loanId);
+    if (!loan) {
+      throw new Error("Loan not found");
+    }
+    
+    // Check if the loan is completed (repayments are already automatically distributed in the smart contract)
+    if (loan.status !== 2) { // 2 = LoanStatus.Completed
+      throw new Error("Loan is not completed. Only completed loans can have repayments claimed.");
+    }
+    
+    // Get current wallet address
+    const currentAddress = await signer.getAddress();
+    
+    // Check if user has invested in this loan
+    const investmentAmount = await getLenderInvestment(loanId, currentAddress);
+    if (investmentAmount <= 0n) {
+      throw new Error("You have no investment in this loan");
+    }
+    
+    // In our current implementation, funds are automatically distributed when the loan is repaid
+    // This function is mainly for UI purposes to acknowledge that a user has "claimed" their repayment
+    // In a real implementation, you might need to call a contract function
+    
+    // Log the successful claim
+    console.log(`Successfully claimed repayment for loan ${loanId}`);
+    return true;
+  } catch (error: any) {
+    console.error(`Error claiming repayment for loan ${loanId}:`, error.message || error);
+    throw error; // Re-throw for UI handling
+  }
+}
+
+/**
  * Switches the wallet to a different account
  * @returns Promise resolving to the new account address
  */
@@ -1040,7 +1085,6 @@ export async function getPlatformStats(): Promise<{
   }
 }
 
-// If the getUserStats function doesn't exist yet, implement it as well
 /**
  * Retrieves statistics specific to the connected user
  * @returns An object containing user-specific metrics
@@ -1066,10 +1110,12 @@ export async function getUserStats(): Promise<{
     const totalBorrowed = userLoans.reduce((sum, loan) => sum + loan.amount, 0);
     const activeLoans = userLoans.filter(loan => loan.status === 'active').length;
     
-    // For investments, we would need to get all loans the user has invested in
-    // This is a simplified version and might need adjustment based on contract
-    const totalInvested = 0; // Placeholder - would need contract data
-    const activeInvestments = 0; // Placeholder - would need contract data
+    // Get user's investments
+    const userInvestments = await getUserInvestments();
+    
+    // Calculate total invested and active investments
+    const totalInvested = userInvestments.reduce((sum, investment) => sum + investment.investedAmount, 0);
+    const activeInvestments = userInvestments.filter(investment => investment.status === 'active').length;
     
     // Reputation is calculated based on completed loans, payment history, etc.
     // For now, hardcode a decent score for demo purposes
@@ -1091,6 +1137,108 @@ export async function getUserStats(): Promise<{
       activeInvestments: 0,
       reputation: 0
     };
+  }
+}
+
+/**
+ * Retrieves all loans that the current user has invested in.
+ * @returns A promise resolving to an array of the user's investments.
+ * @throws {Error} If there's an issue with provider initialization or contract interaction
+ */
+export async function getUserInvestments(): Promise<{
+  loanId: string;
+  borrower: string;
+  amount: number;
+  purpose: string;
+  interestRate: number;
+  investedAmount: number;
+  status: "funding" | "active" | "completed" | "defaulted";
+  createdAt: number;
+  dueDate: number;
+}[]> {
+  try {
+    // Ensure we have a provider and signer
+    await ensureInitialized();
+    if (!signer) {
+      throw new Error("Wallet not connected");
+    }
+
+    // Get current wallet address
+    const currentAddress = await signer.getAddress();
+
+    // Get all loan IDs
+    const allLoanIds = await getAllLoanIds();
+    console.log(`Found ${allLoanIds.length} total loans`);
+
+    // For each loan, check if the user has invested in it
+    const investmentPromises = allLoanIds.map(async (loanId) => {
+      try {
+        // Get the investment amount for this user in this loan
+        const investmentAmount = await getLenderInvestment(loanId, currentAddress);
+        
+        // If the user has invested in this loan, get the loan details
+        if (investmentAmount > 0n) {
+          const loanDetails = await getLoanDetails(loanId);
+          
+          if (loanDetails) {
+            // Convert status number to string status
+            let statusString: "funding" | "active" | "completed" | "defaulted";
+            switch (loanDetails.status) {
+              case 0:
+                statusString = "funding";
+                break;
+              case 1:
+                statusString = "active";
+                break;
+              case 2:
+                statusString = "completed";
+                break;
+              case 3:
+                statusString = "defaulted";
+                break;
+              default:
+                statusString = "funding";
+            }
+            
+            // Return the investment details
+            return {
+              loanId: loanId,
+              borrower: loanDetails.borrower,
+              amount: parseFloat(formatEther(loanDetails.amount)),
+              purpose: loanDetails.purpose,
+              interestRate: Number(loanDetails.interestRate) / 100,  // Convert basis points to percentage
+              investedAmount: parseFloat(formatEther(investmentAmount)),
+              status: statusString,
+              createdAt: Number(loanDetails.createdAt),
+              dueDate: Number(loanDetails.dueDate)
+            };
+          }
+        }
+        return null;
+      } catch (error) {
+        console.error(`Error checking investment for loan ${loanId}:`, error);
+        return null;
+      }
+    });
+
+    // Wait for all promises to resolve and filter out nulls (loans where user has no investment)
+    const investments = (await Promise.all(investmentPromises)).filter(Boolean) as {
+      loanId: string;
+      borrower: string;
+      amount: number;
+      purpose: string;
+      interestRate: number;
+      investedAmount: number;
+      status: "funding" | "active" | "completed" | "defaulted";
+      createdAt: number;
+      dueDate: number;
+    }[];
+
+    console.log(`Found ${investments.length} investments for user ${currentAddress}`);
+    return investments;
+  } catch (error: any) {
+    console.error("Error fetching user investments:", error);
+    throw new Error(`Failed to fetch your investments: ${error.message || 'Unknown error occurred'}`);
   }
 }
 
