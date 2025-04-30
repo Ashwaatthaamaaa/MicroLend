@@ -5,6 +5,8 @@ import { ConnectWallet } from "@/components/connect-wallet"
 import { UserLoans } from "@/components/user-loans"
 import { UserInvestments } from "@/components/user-investments"
 import { UserStats } from "@/components/user-stats"
+import { PlatformStats } from "@/components/platform-stats"
+import { Separator } from "@/components/ui/separator"
 
 export default function Dashboard() {
   return (
@@ -36,7 +38,18 @@ export default function Dashboard() {
               <p className="text-muted-foreground">Manage your loans and investments</p>
             </div>
 
+            <div className="space-y-1">
+              <h2 className="text-2xl font-bold tracking-tight">Your Summary</h2>
+              <p className="text-muted-foreground">Overview of your lending and borrowing activity</p>
+            </div>
+
             <UserStats />
+            
+            <Separator className="my-2" />
+            
+            <PlatformStats />
+            
+            <Separator className="my-2" />
 
             <Tabs defaultValue="loans" className="w-full">
               <TabsList className="grid w-full grid-cols-2">
