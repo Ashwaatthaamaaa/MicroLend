@@ -33,9 +33,9 @@ export function LoanRepaymentSchedule({ amount, interestRate, duration, startDat
         <TableRow>
           <TableCell>1</TableCell>
           <TableCell>{dueDate.toLocaleDateString()}</TableCell>
-          <TableCell>{amount.toFixed(2)} MATIC</TableCell>
-          <TableCell>{totalInterest.toFixed(2)} MATIC</TableCell>
-          <TableCell>{totalRepayment.toFixed(2)} MATIC</TableCell>
+          <TableCell>{amount.toFixed(2)} ETH</TableCell>
+          <TableCell>{totalInterest.toFixed(2)} ETH</TableCell>
+          <TableCell>{totalRepayment.toFixed(2)} ETH</TableCell>
         </TableRow>
       </TableBody>
     </Table>
