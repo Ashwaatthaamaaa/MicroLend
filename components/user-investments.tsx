@@ -5,7 +5,7 @@ import Link from "next/link"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
-import { getUserInvestments, claimRepayment } from "@/frontend/lib/loan-contract"
+import { getUserInvestments } from "@/frontend/lib/loan-contract"
 import { useToast } from "@/hooks/use-toast"
 import { useWallet } from "./wallet-provider"
 import { RefreshCcw } from "lucide-react"
@@ -25,7 +25,6 @@ type Investment = {
 export function UserInvestments() {
   const [investments, setInvestments] = useState<Investment[]>([])
   const [loading, setLoading] = useState(true)
-  const [claimingLoanId, setClaimingLoanId] = useState<string | null>(null)
   const { toast } = useToast()
   const { isConnected, address, refreshData, isRefreshing } = useWallet()
 
@@ -50,30 +49,6 @@ export function UserInvestments() {
       setLoading(false)
     }
   }, [isConnected, address])
-
-  const handleClaim = async (loanId: string) => {
-    try {
-      setClaimingLoanId(loanId)
-      await claimRepayment(loanId)
-
-      // Update the investments list
-      setInvestments((prevInvestments) => prevInvestments.filter((investment) => investment.loanId !== loanId))
-
-      toast({
-        title: "Repayment Claimed",
-        description: "You have successfully claimed your repayment",
-      })
-    } catch (error) {
-      console.error("Failed to claim repayment:", error)
-      toast({
-        title: "Transaction Failed",
-        description: "Failed to claim repayment. Please try again.",
-        variant: "destructive",
-      })
-    } finally {
-      setClaimingLoanId(null)
-    }
-  }
 
   const handleRefresh = async () => {
     try {
@@ -200,28 +175,12 @@ export function UserInvestments() {
                       <p className="font-medium">{getDaysLeft(investment.dueDate)} days</p>
                     </div>
                   )}
-                  <div>
-                    <p className="text-sm text-muted-foreground">Interest Earned</p>
-                    <p className="font-medium">
-                      {calculateReturn(investment.investedAmount, investment.interestRate).toFixed(4)} ETH
-                    </p>
-                  </div>
                 </div>
               </CardContent>
               <CardFooter>
-                {investment.status === "completed" ? (
-                  <Button
-                    className="w-full"
-                    onClick={() => handleClaim(investment.loanId)}
-                    disabled={claimingLoanId === investment.loanId}
-                  >
-                    {claimingLoanId === investment.loanId ? "Processing..." : "Claim Repayment"}
-                  </Button>
-                ) : (
-                  <Button className="w-full" variant="outline" asChild>
-                    <Link href={`/loans/${investment.loanId}`}>View Details</Link>
-                  </Button>
-                )}
+                <Button className="w-full" variant="outline" asChild>
+                  <Link href={`/loans/${investment.loanId}`}>View Details</Link>
+                </Button>
               </CardFooter>
             </Card>
           ))}
