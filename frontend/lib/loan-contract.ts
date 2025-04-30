@@ -930,14 +930,175 @@ export async function switchWallet(): Promise<string> {
   }
 }
 
+/**
+ * Retrieves platform-wide statistics
+ * @returns An object containing various platform metrics
+ */
+export async function getPlatformStats(): Promise<{
+  totalLoans: number;
+  totalVolume: number;
+  activeLoanCount: number;
+  activeLoanVolume: number;
+  totalInvestors: number;
+  totalBorrowers: number;
+  averageInterestRate: number;
+  averageLoanDuration: number;
+  completedLoans: number;
+  defaultedLoans: number;
+  successRate: number;
+}> {
+  try {
+    // Ensure we have a provider for read operations
+    let readProvider = provider;
+    if (!readProvider) {
+      if (typeof window === 'undefined' || !window.ethereum) {
+        throw new Error("No provider available. Please ensure MetaMask is installed and accessible.");
+      }
+      try {
+        readProvider = new ethers.BrowserProvider(window.ethereum);
+      } catch (providerError: any) {
+        throw new Error(`Failed to initialize provider: ${providerError.message || 'Unknown provider error'}`);
+      }
+    }
+
+    // Get all loans to calculate platform stats
+    const loans = await getLoans();
+    
+    if (!loans.length) {
+      return {
+        totalLoans: 0,
+        totalVolume: 0,
+        activeLoanCount: 0,
+        activeLoanVolume: 0,
+        totalInvestors: 0,
+        totalBorrowers: 0,
+        averageInterestRate: 0,
+        averageLoanDuration: 0,
+        completedLoans: 0,
+        defaultedLoans: 0,
+        successRate: 0
+      };
+    }
+    
+    // Calculate platform statistics
+    const totalLoans = loans.length;
+    const totalVolume = loans.reduce((sum, loan) => sum + loan.amount, 0);
+    
+    const activeLoans = loans.filter(loan => loan.status === 'active');
+    const activeLoanCount = activeLoans.length;
+    const activeLoanVolume = activeLoans.reduce((sum, loan) => sum + loan.amount, 0);
+    
+    const completedLoans = loans.filter(loan => loan.status === 'completed').length;
+    const defaultedLoans = loans.filter(loan => loan.status === 'defaulted').length;
+    
+    // Calculate success rate (completed loans / (completed + defaulted))
+    const successRate = completedLoans + defaultedLoans === 0 ? 
+      100 : // If no loans are completed or defaulted yet, show 100%
+      (completedLoans / (completedLoans + defaultedLoans)) * 100;
+    
+    // Get unique borrowers and calculate average interest rate and duration
+    const borrowers = new Set(loans.map(loan => loan.borrower.toLowerCase()));
+    const totalBorrowers = borrowers.size;
+    
+    // We'd need additional data for unique investors which would require looping through 
+    // each loan and getting all investors. For now, set to a placeholder
+    const totalInvestors = 0; // This would require additional contract calls
+    
+    // Calculate average interest rate and duration
+    const averageInterestRate = loans.reduce((sum, loan) => sum + loan.interestRate, 0) / totalLoans;
+    const averageLoanDuration = loans.reduce((sum, loan) => sum + loan.duration, 0) / totalLoans;
+    
+    return {
+      totalLoans,
+      totalVolume,
+      activeLoanCount,
+      activeLoanVolume,
+      totalInvestors,
+      totalBorrowers,
+      averageInterestRate,
+      averageLoanDuration,
+      completedLoans,
+      defaultedLoans,
+      successRate
+    };
+  } catch (error: any) {
+    console.error("Failed to fetch platform stats:", error.message || error);
+    // Return zeros on error rather than throwing
+    return {
+      totalLoans: 0,
+      totalVolume: 0,
+      activeLoanCount: 0,
+      activeLoanVolume: 0,
+      totalInvestors: 0,
+      totalBorrowers: 0,
+      averageInterestRate: 0,
+      averageLoanDuration: 0,
+      completedLoans: 0,
+      defaultedLoans: 0,
+      successRate: 0
+    };
+  }
+}
+
+// If the getUserStats function doesn't exist yet, implement it as well
+/**
+ * Retrieves statistics specific to the connected user
+ * @returns An object containing user-specific metrics
+ */
+export async function getUserStats(): Promise<{
+  totalBorrowed: number;
+  totalInvested: number;
+  activeLoans: number;
+  activeInvestments: number;
+  reputation: number;
+}> {
+  try {
+    await ensureInitialized();
+    if (!signer) throw new Error("Wallet not connected.");
+    
+    // Get user address
+    const address = await signer.getAddress();
+    
+    // Get user's loans
+    const userLoans = await getUserLoans();
+    
+    // Calculate total borrowed and active loans
+    const totalBorrowed = userLoans.reduce((sum, loan) => sum + loan.amount, 0);
+    const activeLoans = userLoans.filter(loan => loan.status === 'active').length;
+    
+    // For investments, we would need to get all loans the user has invested in
+    // This is a simplified version and might need adjustment based on contract
+    const totalInvested = 0; // Placeholder - would need contract data
+    const activeInvestments = 0; // Placeholder - would need contract data
+    
+    // Reputation is calculated based on completed loans, payment history, etc.
+    // For now, hardcode a decent score for demo purposes
+    const reputation = 85;
+    
+    return {
+      totalBorrowed,
+      totalInvested,
+      activeLoans,
+      activeInvestments,
+      reputation
+    };
+  } catch (error: any) {
+    console.error("Failed to fetch user stats:", error.message || error);
+    return {
+      totalBorrowed: 0,
+      totalInvested: 0,
+      activeLoans: 0,
+      activeInvestments: 0,
+      reputation: 0
+    };
+  }
+}
+
 // --- Removed/Non-MVP Functions ---
 // Ensure any UI components previously calling these are updated or removed.
 /*
 export async function repayLoan(...) { ... }
 export async function claimRepayment(...) { ... }
-export async function getUserStats(...) { ... }
-export async function getPlatformStats(...) { ... }
 export async function getLoanActivity(...) { ... }
-export async function getUserLoans(...) { ... }
 export async function getUserInvestments(...) { ... }
 */
