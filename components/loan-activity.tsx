@@ -57,15 +57,17 @@ export function LoanActivity({ loanId }: LoanActivityProps) {
   const getActivityText = (activity: ActivityItem) => {
     switch (activity.type) {
       case "created":
-        return `Loan created by ${formatAddress(activity.user)}`
+        return `${formatAddress(activity.user)} created this loan request`
       case "funded":
-        return `${formatAddress(activity.user)} funded ${activity.amount} MATIC`
+        return `${formatAddress(activity.user)} funded ${activity.amount} ETH`
       case "repaid":
-        return `Loan repaid by ${formatAddress(activity.user)}`
+        return `${formatAddress(activity.user)} repaid the loan`
+      case "completed":
+        return "Loan was fully repaid"
       case "defaulted":
-        return `Loan marked as defaulted`
+        return "Loan was marked as defaulted"
       default:
-        return `Unknown activity`
+        return `${activity.type} by ${formatAddress(activity.user)}`
     }
   }
 
