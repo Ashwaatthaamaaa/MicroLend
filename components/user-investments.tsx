@@ -172,8 +172,8 @@ export function UserInvestments() {
               <CardContent className="pb-2">
                 <div className="grid grid-cols-2 md:grid-cols-2 gap-4">
                   <div>
-                    <p className="text-sm text-muted-foreground">Invested</p>
-                    <p className="font-medium">{investment.investedAmount} MATIC</p>
+                    <p className="text-sm text-muted-foreground">Invested Amount</p>
+                    <p className="font-medium">{investment.investedAmount} ETH</p>
                   </div>
                   <div>
                     <p className="text-sm text-muted-foreground">Interest</p>
@@ -183,14 +183,14 @@ export function UserInvestments() {
                     <div>
                       <p className="text-sm text-muted-foreground">Return</p>
                       <p className="font-medium">
-                        {calculateReturn(investment.investedAmount, investment.interestRate).toFixed(4)} MATIC
+                        {calculateReturn(investment.investedAmount, investment.interestRate).toFixed(4)} ETH
                       </p>
                     </div>
                   ) : (
                     <div>
                       <p className="text-sm text-muted-foreground">Expected Return</p>
                       <p className="font-medium">
-                        {calculateReturn(investment.investedAmount, investment.interestRate).toFixed(4)} MATIC
+                        {calculateReturn(investment.investedAmount, investment.interestRate).toFixed(4)} ETH
                       </p>
                     </div>
                   )}
@@ -200,6 +200,12 @@ export function UserInvestments() {
                       <p className="font-medium">{getDaysLeft(investment.dueDate)} days</p>
                     </div>
                   )}
+                  <div>
+                    <p className="text-sm text-muted-foreground">Interest Earned</p>
+                    <p className="font-medium">
+                      {calculateReturn(investment.investedAmount, investment.interestRate).toFixed(4)} ETH
+                    </p>
+                  </div>
                 </div>
               </CardContent>
               <CardFooter>
