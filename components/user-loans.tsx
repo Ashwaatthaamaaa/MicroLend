@@ -166,7 +166,7 @@ export function UserLoans() {
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
                   <div>
                     <p className="text-sm text-muted-foreground">Amount</p>
-                    <p className="font-medium">{loan.amount} MATIC</p>
+                    <p className="font-medium">{loan.amount} ETH</p>
                   </div>
                   <div>
                     <p className="text-sm text-muted-foreground">Interest</p>
