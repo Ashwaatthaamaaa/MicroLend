@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { getUserStats } from "@/lib/loan-contract"
+import { getUserStats } from "@/frontend/lib/loan-contract"
 
 export function UserStats() {
   const [stats, setStats] = useState({
@@ -33,7 +33,7 @@ export function UserStats() {
           <CardTitle className="text-sm font-medium">Total Borrowed</CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="text-2xl font-bold">{stats.totalBorrowed.toFixed(2)} MATIC</div>
+          <div className="text-2xl font-bold">{stats.totalBorrowed.toFixed(2)} ETH</div>
         </CardContent>
       </Card>
       <Card>
@@ -41,7 +41,7 @@ export function UserStats() {
           <CardTitle className="text-sm font-medium">Total Invested</CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="text-2xl font-bold">{stats.totalInvested.toFixed(2)} MATIC</div>
+          <div className="text-2xl font-bold">{stats.totalInvested.toFixed(2)} ETH</div>
         </CardContent>
       </Card>
       <Card>
